@@ -1,0 +1,11 @@
+ultralytics>=8.1.0
+torch>=2.0
+torchvision
+opencv-python
+numpy
+pillow
+tqdm
+scikit-learn
+imagehash
+pillow
+git+https://github.com/openai/CLIP.git
