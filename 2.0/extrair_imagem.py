@@ -7,6 +7,7 @@ from PIL import Image
 from ultralytics import YOLO
 from collections import deque
 
+
 # ================= CONFIG =================
 BASE_DIR = "base"
 VIDEO_PATH = "video.mp4"
@@ -24,8 +25,9 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # ---------- Models ----------
-yolo = YOLO("yolov8n.pt")
-clip_model, preprocess = clip.load("ViT-B/32", device=DEVICE)
+# ---------- Models ----------
+yolo = YOLO("yolov8l.pt")  # YOLOv8 Large
+clip_model, preprocess = clip.load("ViT-L/14", device=DEVICE)  # CLIP ViT-L/14
 
 # ---------- Utils ----------
 def get_embedding(pil_img):

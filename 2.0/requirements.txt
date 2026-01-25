@@ -1,7 +1,28 @@
+<<<<<<< HEAD
+<<<<<<< HEAD
 opencv-python
 ultralytics
 torch
 torchvision
 numpy
 pillow
+customtkinter
+=======
+opencv-python
+ultralytics
+torch
+torchvision
+numpy
+pillow
+customtkinter
+>>>>>>> bb35b62fd2af9ee484728e334798558a4dcc82cb
+=======
+opencv-python
+ultralytics
+torch
+torchvision
+numpy
+pillow
+customtkinter
+>>>>>>> bb35b62fd2af9ee484728e334798558a4dcc82cb
 git+https://github.com/openai/CLIP.git
