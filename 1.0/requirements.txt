@@ -1,7 +1,0 @@
-opencv-python
-ultralytics
-torch
-torchvision
-numpy
-pillow
-git+https://github.com/openai/CLIP.git
