@@ -42,7 +42,7 @@ def processar_imagem(img_path, session):
 def gerar_tags():
     caminho_pasta = input("📂 Digite o caminho da pasta de imagens: ").strip('"')
     tag_fixa = input("🏷️ Digite a tag principal (ex: illustrator_style): ").strip()
-    threshold = 0.35 # Sensibilidade (0.1 a 0.9)
+    threshold = 0.30 # Sensibilidade (0.1 a 0.9)
 
     pasta = Path(caminho_pasta)
     imagens = [f for f in pasta.iterdir() if f.suffix.lower() in [".jpg", ".png", ".webp", ".jpeg"]]
