@@ -1,0 +1,4 @@
+onnxruntime-gpu
+numpy
+Pillow
+huggingface_hub
