@@ -8,10 +8,10 @@ from tkinter import filedialog, messagebox
 from PIL import Image
 from ultralytics import YOLO
 from collections import deque
-from tqdm import tqdm
+from pathlib import Path
 import threading
 
-# Configurações de tema
+# Configurações de UI
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
 
@@ -19,159 +19,196 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Extrator PRO | YOLOv8 + CLIP")
-        self.geometry("600x580")
+        self.title("Extrator PRO Miraculous | YOLOv8 + CLIP + Revisão")
+        self.geometry("700x650")
 
-        # Variáveis de controle
+        # Variáveis
         self.base_path = ctk.StringVar()
         self.video_path = ctk.StringVar()
         self.sim_threshold = ctk.DoubleVar(value=0.85)
-        [cite_start]self.device = "cuda" if torch.cuda.is_available() else "cpu" [cite: 1]
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
         self.setup_ui()
 
     def setup_ui(self):
         self.grid_columnconfigure(0, weight=1)
 
-        self.label_title = ctk.CTkLabel(self, text="Análise de Vídeo Adaptativa", font=ctk.CTkFont(size=22, weight="bold"))
+        self.label_title = ctk.CTkLabel(self, text="Extração Adaptativa de Personagens", font=ctk.CTkFont(size=22, weight="bold"))
         self.label_title.pack(pady=20)
 
-        # Seleção de Arquivos
-        self.frame_files = ctk.CTkFrame(self)
-        self.frame_files.pack(padx=20, pady=10, fill="x")
+        self.frame_main = ctk.CTkFrame(self)
+        self.frame_main.pack(padx=20, pady=10, fill="both", expand=True)
 
-        # Base
-        ctk.CTkLabel(self.frame_files, text="Pasta Base (Imagens de Referência):").grid(row=0, column=0, sticky="w", padx=10, pady=5)
-        ctk.CTkEntry(self.frame_files, textvariable=self.base_path, width=350).grid(row=1, column=0, padx=10, pady=5)
-        ctk.CTkButton(self.frame_files, text="Abrir", command=lambda: self.base_path.set(filedialog.askdirectory()), width=80).grid(row=1, column=1, padx=5)
+        # Seletores
+        self.add_path_selector("Pasta de Referência (Imagens da Personagem):", self.base_path, is_dir=True)
+        self.add_path_selector("Vídeo do Episódio:", self.video_path, is_dir=False)
 
-        # Vídeo
-        ctk.CTkLabel(self.frame_files, text="Vídeo para Analisar:").grid(row=2, column=0, sticky="w", padx=10, pady=5)
-        ctk.CTkEntry(self.frame_files, textvariable=self.video_path, width=350).grid(row=3, column=0, padx=10, pady=5)
-        ctk.CTkButton(self.frame_files, text="Abrir", command=lambda: self.video_path.set(filedialog.askopenfilename()), width=80).grid(row=3, column=1, padx=5)
-
-        # Configurações de Sensibilidade
-        ctk.CTkLabel(self.frame_files, text="Ajuste de Sensibilidade (Threshold):").grid(row=4, column=0, sticky="w", padx=10, pady=(15,0))
-        self.slider = ctk.CTkSlider(self.frame_files, from_=0.5, to=1.0, variable=self.sim_threshold)
-        self.slider.grid(row=5, column=0, padx=10, pady=5, sticky="ew")
-        self.label_val = ctk.CTkLabel(self.frame_files, text="0.85")
-        self.label_val.grid(row=5, column=1)
-        self.sim_threshold.trace_add("write", lambda *args: self.label_val.configure(text=f"{self.sim_threshold.get():.2f}"))
+        # Configurações
+        self.label_sim = ctk.CTkLabel(self.frame_main, text="Sensibilidade do CLIP (Similaridade):")
+        self.label_sim.pack(pady=(15, 0))
+        
+        self.slider = ctk.CTkSlider(self.frame_main, from_=0.5, to=1.0, variable=self.sim_threshold, command=self.update_label)
+        self.slider.pack(pady=5, padx=20, fill="x")
+        
+        self.label_val = ctk.CTkLabel(self.frame_main, text="0.85")
+        self.label_val.pack()
 
         # Progresso
         self.progress_bar = ctk.CTkProgressBar(self, width=500)
         self.progress_bar.set(0)
-        self.progress_bar.pack(pady=30)
+        self.progress_bar.pack(pady=20)
 
-        # Botão Ação
-        self.btn_start = ctk.CTkButton(self, text="INICIAR PROCESSAMENTO", command=self.start_thread, fg_color="#1f538d", height=45, font=ctk.CTkFont(weight="bold"))
-        self.btn_start.pack(pady=10)
-
-        self.label_status = ctk.CTkLabel(self, text="Pronto para começar")
+        self.label_status = ctk.CTkLabel(self, text="Aguardando início...")
         self.label_status.pack()
 
-    def get_embedding(self, pil_img, model, preprocess):
-        [cite_start]img = preprocess(pil_img).unsqueeze(0).to(self.device) [cite: 1]
-        with torch.no_grad():
-            [cite_start]emb = model.encode_image(img) [cite: 1]
-        [cite_start]emb /= emb.norm(dim=-1, keepdim=True) [cite: 1]
-        [cite_start]return emb.cpu().numpy()[0] [cite: 1]
+        self.btn_start = ctk.CTkButton(self, text="EXECUTAR PIPELINE COMPLETO", command=self.start_worker, height=50, font=ctk.CTkFont(weight="bold"))
+        self.btn_start.pack(pady=20)
 
-    def start_thread(self):
+    def add_path_selector(self, label_text, var, is_dir):
+        label = ctk.CTkLabel(self.frame_main, text=label_text)
+        label.pack(anchor="w", padx=20, pady=(10, 0))
+        
+        frame = ctk.CTkFrame(self.frame_main, fg_color="transparent")
+        frame.pack(fill="x", padx=15)
+        
+        entry = ctk.CTkEntry(frame, textvariable=var)
+        entry.pack(side="left", fill="x", expand=True, padx=5, pady=5)
+        
+        btn = ctk.CTkButton(frame, text="Abrir", width=70, 
+                            command=lambda: var.set(filedialog.askdirectory() if is_dir else filedialog.askopenfilename()))
+        btn.pack(side="right", padx=5)
+
+    def update_label(self, val):
+        self.label_val.configure(text=f"{val:.2f}")
+
+    def get_embedding(self, pil_img, model, preprocess):
+        img = preprocess(pil_img).unsqueeze(0).to(self.device)
+        with torch.no_grad():
+            emb = model.encode_image(img)
+        emb /= emb.norm(dim=-1, keepdim=True)
+        return emb.cpu().numpy()[0]
+
+    def start_worker(self):
         if not self.base_path.get() or not self.video_path.get():
-            messagebox.showwarning("Erro", "Por favor, selecione os caminhos primeiro!")
+            messagebox.showwarning("Aviso", "Selecione todos os arquivos!")
             return
         self.btn_start.configure(state="disabled")
-        threading.Thread(target=self.process_video, daemon=True).start()
+        threading.Thread(target=self.main_process, daemon=True).start()
 
-    def process_video(self):
+    def main_process(self):
         try:
-            # 1. Setup Inicial
-            OUTPUT_DIR = "output_analise"
-            [cite_start]os.makedirs(OUTPUT_DIR, exist_ok=True) [cite: 1]
-            
-            self.label_status.configure(text="Carregando modelos de IA...")
-            [cite_start]yolo = YOLO("yolov8l.pt") [cite: 1]
-            [cite_start]clip_model, preprocess = clip.load("ViT-L/14", device=self.device) [cite: 1]
+            output_dir = "dataset_extraido"
+            os.makedirs(output_dir, exist_ok=True)
 
-            # 2. Cálculo de Tempo Dinâmico
-            [cite_start]cap = cv2.VideoCapture(self.video_path.get()) [cite: 1]
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            if fps < 1: fps = 30
-            
-            FRAME_SKIP = max(1, int(fps * 0.2))  # Analisa a cada 0.2s
-            TEMPORAL_WINDOW = max(1, int(0.5 / 0.2)) # Confirmação de 0.5s
-            
-            # 3. Processar Base
-            self.label_status.configure(text="Processando imagens de referência...")
-            base_embeddings = []
-            files = [f for f in os.listdir(self.base_path.get()) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-            for file in files:
-                [cite_start]img = Image.open(os.path.join(self.base_path.get(), file)).convert("RGB") [cite: 1]
-                base_embeddings.append(self.get_embedding(img, clip_model, preprocess))
+            # 1. Carregamento de Modelos
+            self.label_status.configure(text="Iniciando IAs (YOLOv8 + CLIP)...")
+            yolo = YOLO("yolov8m.pt") # Medium é o equilíbrio perfeito
+            clip_model, preprocess = clip.load("ViT-L/14", device=self.device)
 
-            [cite_start]base_embeddings = np.array(base_embeddings) [cite: 1]
-            [cite_start]base_mean_embedding = base_embeddings.mean(axis=0) [cite: 1]
-            [cite_start]base_mean_embedding /= np.linalg.norm(base_mean_embedding) [cite: 1]
+            # 2. Processar Referências
+            self.label_status.configure(text="Analisando suas imagens de referência...")
+            base_embs = []
+            ref_path = Path(self.base_path.get())
+            for f in ref_path.glob("*.*"):
+                if f.suffix.lower() in [".jpg", ".jpeg", ".png"]:
+                    img = Image.open(f).convert("RGB")
+                    base_embs.append(self.get_embedding(img, clip_model, preprocess))
+            
+            ref_embedding = np.mean(base_embs, axis=0)
+            ref_embedding /= np.linalg.norm(ref_embedding)
 
-            # 4. Loop de Vídeo
+            # 3. Processar Vídeo
+            cap = cv2.VideoCapture(self.video_path.get())
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            frame_id, saved_count = 0, 0
-            saved_embeddings = []
-            [cite_start]similarity_window = deque(maxlen=TEMPORAL_WINDOW) [cite: 1]
-
-            self.label_status.configure(text="Analisando vídeo...")
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            skip = max(1, int(fps * 0.3)) # Analisa 3 frames por segundo de vídeo
             
-            with tqdm(total=total_frames, desc="Processando") as pbar:
-                while cap.isOpened():
-                    [cite_start]ret, frame = cap.read() [cite: 1]
-                    if not ret: break
+            frame_idx, saved_count = 0, 0
+            saved_embs = []
 
-                    frame_id += 1
-                    pbar.update(1)
-                    
-                    if frame_id % 10 == 0:
-                        self.progress_bar.set(frame_id / total_frames)
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret: break
 
-                    [cite_start]if frame_id % FRAME_SKIP != 0: continue [cite: 1]
-
-                    [cite_start]results = yolo(frame, verbose=False)[0] [cite: 1]
+                if frame_idx % skip == 0:
+                    results = yolo(frame, verbose=False)[0]
                     for box in results.boxes:
-                        [cite_start]if int(box.cls[0]) != 0: continue # Pessoas [cite: 1]
+                        if int(box.cls[0]) != 0: continue # Foca em pessoas
 
-                        [cite_start]x1, y1, x2, y2 = map(int, box.xyxy[0]) [cite: 1]
-                        [cite_start]crop = frame[y1:y2, x1:x2] [cite: 1]
+                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+                        crop = frame[y1:y2, x1:x2]
                         if crop.size == 0: continue
 
-                        [cite_start]pil_crop = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)) [cite: 1]
+                        # CLIP Similarity
+                        pil_crop = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
                         emb = self.get_embedding(pil_crop, clip_model, preprocess)
+                        sim = float(np.dot(ref_embedding, emb))
 
-                        [cite_start]sim = float(np.dot(base_mean_embedding, emb)) [cite: 1]
-                        similarity_window.append(sim)
-
-                        [cite_start]if len(similarity_window) < TEMPORAL_WINDOW: continue [cite: 1]
-
-                        if (sum(similarity_window)/TEMPORAL_WINDOW) >= self.sim_threshold.get():
-                            # Anti-duplicata (Resultados recentes)
+                        if sim >= self.sim_threshold.get():
+                            # Anti-duplicata rápido
                             is_dup = False
-                            if saved_embeddings:
-                                [cite_start]if max(float(np.dot(emb, s)) for s in saved_embeddings[-5:]) > 0.93: [cite: 1]
+                            if saved_embs:
+                                if max(float(np.dot(emb, s)) for s in saved_embs[-10:]) > 0.96:
                                     is_dup = True
                             
                             if not is_dup:
-                                [cite_start]cv2.imwrite(f"{OUTPUT_DIR}/frame_{frame_id}.jpg", crop) [cite: 1]
-                                saved_embeddings.append(emb)
+                                # Salva quadrado para o LoRA
+                                h, w = crop.shape[:2]
+                                dim = min(h, w)
+                                final_crop = crop[0:dim, 0:dim] # Simplificado para o exemplo
+                                
+                                out_path = f"{output_dir}/raw_{frame_idx}.jpg"
+                                cv2.imwrite(out_path, final_crop)
+                                saved_embs.append(emb)
                                 saved_count += 1
 
-            [cite_start]cap.release() [cite: 1]
-            self.progress_bar.set(1)
-            self.label_status.configure(text=f"Finalizado! {saved_count} capturas.")
-            messagebox.showinfo("Sucesso", f"Processamento concluído.\nForam salvas {saved_count} imagens.")
+                frame_idx += 1
+                if frame_idx % 20 == 0:
+                    self.progress_bar.set(frame_idx / total_frames)
+                    self.label_status.configure(text=f"Analisando: {frame_idx}/{total_frames} frames")
+
+            cap.release()
+
+            # 4. REVISÃO AUTOMÁTICA
+            self.label_status.configure(text="Iniciando Revisão Final (Removendo erros)...")
+            self.revisar_pasta(output_dir, ref_embedding, clip_model, preprocess)
+
+            self.label_status.configure(text=f"Sucesso! Dataset finalizado.")
+            messagebox.showinfo("Fim", "Processamento e Revisão concluídos!")
 
         except Exception as e:
-            messagebox.showerror("Erro Crítico", str(e))
+            messagebox.showerror("Erro", str(e))
         finally:
             self.btn_start.configure(state="normal")
+
+    def revisar_pasta(self, pasta, ref_emb, model, preprocess):
+        """Varre a pasta gerada e deleta outliers ou clones."""
+        caminho = Path(pasta)
+        arquivos = list(caminho.glob("*.jpg"))
+        embeddings = []
+        validos = []
+
+        # Remove imagens que não batem com a referência na segunda passada
+        for arq in arquivos:
+            img = Image.open(arq).convert("RGB")
+            emb = self.get_embedding(img, model, preprocess)
+            sim = float(np.dot(ref_emb, emb))
+            
+            if sim < self.sim_threshold.get():
+                arq.unlink() # Deleta se estiver abaixo do threshold
+            else:
+                embeddings.append(emb)
+                validos.append(arq)
+
+        # Deleta imagens quase idênticas (mesma pose em tempos diferentes)
+        for i in range(len(embeddings)):
+            if not validos[i].exists(): continue
+            for j in range(i + 1, len(embeddings)):
+                if not validos[j].exists(): continue
+                
+                dist = float(np.dot(embeddings[i], embeddings[j]))
+                if dist > 0.98: # 98% de similaridade entre capturas
+                    validos[j].unlink()
 
 if __name__ == "__main__":
     app = App()
